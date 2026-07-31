@@ -34,12 +34,12 @@ export const baseGameLevels = [
   },
   {
     id: "soft_spikes", name: "Spike Detour", targetTime: 34,
-    hint: "Spikes hurt the package. Flip polarity to slide the loose package over safe metal platforms.",
+    hint: "Spikes hurt the package. Flip polarity to move the metal bridge over the spikes before sending the package.",
     spawn: { x: 54, y: 430 }, package: { x: 120, y: 452 }, delivery: { x: 810, y: 432, w: 92, h: 68 },
-    walls: [floor, wall(256, 432, 120, 18), wall(676, 430, 240, 18)],
-    platforms: [platform(408, 440, 142, 18, 106, 0, 1)],
-    magnets: [mag(462, 392, 1, 980, 345)],
-    hazards: [spike(565, 482, 84)]
+    walls: [floor, wall(252, 432, 128, 18), wall(690, 430, 226, 18)],
+    platforms: [platform(402, 446, 170, 18, 118, 0, 1)],
+    magnets: [mag(506, 398, 1, 780, 304)],
+    hazards: [spike(568, 482, 76)]
   },
   {
     id: "polarity_door", name: "Door Switch", targetTime: 36,
@@ -53,9 +53,9 @@ export const baseGameLevels = [
     id: "moving_bridge", name: "Moving Bridge", targetTime: 40,
     hint: "Some platforms are magnetic. Flip to move the bridge into place, then cross.",
     spawn: { x: 54, y: 430 }, package: { x: 120, y: 452 }, delivery: { x: 800, y: 258, w: 98, h: 68 },
-    walls: [floor, wall(250, 418, 120, 18), wall(690, 326, 230, 18)],
-    platforms: [platform(438, 420, 132, 18, 130, -92, 1)],
-    magnets: [mag(520, 330, 1, 840, 330)]
+    walls: [floor, wall(248, 418, 132, 18), wall(682, 326, 238, 18)],
+    platforms: [platform(430, 420, 154, 18, 126, -90, 1)],
+    magnets: [mag(520, 332, 1, 760, 300)]
   },
   {
     id: "plate_gate", name: "Plate Gate", targetTime: 42,
@@ -102,12 +102,12 @@ export const baseGameLevels = [
     id: "box_button", name: "Box Button", targetTime: 50,
     hint: "Metal boxes react to magnets too. Flip polarity to shove the box onto the plate.",
     spawn: { x: 54, y: 430 }, package: { x: 110, y: 452 }, delivery: { x: 806, y: 432, w: 92, h: 68 },
-    walls: [floor, wall(220, 438, 110, 18), wall(700, 430, 210, 18)],
-    boxes: [box(390, 452)],
-    plates: [plate(540, 488, "boxgate")],
+    walls: [floor, wall(220, 438, 118, 18), wall(700, 430, 210, 18)],
+    boxes: [box(372, 452)],
+    plates: [plate(552, 488, "boxgate")],
     doors: [door(646, 378, 36, 122, "boxgate")],
-    magnets: [mag(488, 410, 1, 1040, 355)],
-    hazards: [spike(460, 482, 66)]
+    magnets: [mag(496, 412, 1, 820, 318)],
+    hazards: [spike(464, 482, 50)]
   },
   {
     id: "combo_bridge", name: "Combo Bridge", targetTime: 54,
