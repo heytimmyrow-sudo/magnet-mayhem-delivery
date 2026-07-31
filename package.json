@@ -1,7 +1,8 @@
 {
   "type": "module",
   "scripts": {
-    "build": "node build-static-site.mjs"
+    "build": "node build-static-site.mjs",
+    "test": "node --test tests/gameplay-smoke.test.mjs"
   },
   "devDependencies": {}
 }
