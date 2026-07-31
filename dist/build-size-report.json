@@ -1,0 +1,53 @@
+{
+  "limits": {
+    "initialBytes": 5242880,
+    "totalBytes": 8388608
+  },
+  "totals": {
+    "bytes": 97351,
+    "gzipBytes": 27566
+  },
+  "withinBudget": true,
+  "files": [
+    {
+      "path": "index.html",
+      "bytes": 6499,
+      "gzipBytes": 1792
+    },
+    {
+      "path": "styles.css",
+      "bytes": 12327,
+      "gzipBytes": 3609
+    },
+    {
+      "path": "game.js",
+      "bytes": 54080,
+      "gzipBytes": 14395
+    },
+    {
+      "path": "poki-wrapper.js",
+      "bytes": 2848,
+      "gzipBytes": 951
+    },
+    {
+      "path": "save-system.js",
+      "bytes": 5153,
+      "gzipBytes": 1626
+    },
+    {
+      "path": "localization/en.js",
+      "bytes": 8284,
+      "gzipBytes": 3121
+    },
+    {
+      "path": "levels/base-game.js",
+      "bytes": 6966,
+      "gzipBytes": 1702
+    },
+    {
+      "path": "expansions/expansion-registry.js",
+      "bytes": 1194,
+      "gzipBytes": 370
+    }
+  ]
+}
