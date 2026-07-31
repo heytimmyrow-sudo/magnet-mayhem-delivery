@@ -17,6 +17,7 @@ const MAGNET_IMPULSE_SPEED_CAP = 1220;
 const MAGNET_IMPULSE_MULT = .72;
 const PICKUP_COOLDOWN = .22;
 const THROW_HOLD_TIME = .72;
+const THROW_CHARGE_THRESHOLD = .16;
 const keys = new Set();
 const heldTouch = new Set();
 const effects = [];
@@ -71,11 +72,12 @@ function makeGame(expansionId = "base_game", levelIndex = 0) {
     restartTimer: 0,
     didFlip: false,
     result: null,
+    failQueued: false,
     player: { ...body(level.spawn.x, level.spawn.y, 32, 42, false), speed: 0, grounded: false, coyote: 0, jumpBuffer: 0, facing: 1, carry: false, squash: 0, pickupCooldown: 0, holdPickup: false, pickupStartedCarrying: false, throwCharge: 0 },
     package: { ...packageBody, health: 3, carried: false, hitCooldown: 0, wobble: 0, pickupCooldown: 0, lastCarried: false },
     platforms: (level.platforms || []).map((p) => ({ ...p, baseX: p.x, baseY: p.y, targetX: p.x, targetY: p.y })),
     doors: (level.doors || []).map((d) => ({ ...d, open: false })),
-    boxes: (level.boxes || []).map((b) => body(b.x, b.y, b.w, b.h, true)),
+    boxes: (level.boxes || []).map((b) => ({ ...body(b.x, b.y, b.w, b.h, true), startX: b.x, startY: b.y })),
     hazards: [...(level.hazards || []), ...(level.movingHazards || [])].map((h) => ({ ...h, baseX: h.x, baseY: h.y, t: Math.random() * 3 })),
     plates: (level.plates || []).map((p) => ({ ...p, pressed: false })),
     message: level.hint || "Deliver the robot and package to the green chute.",
@@ -92,7 +94,7 @@ function makeTutorial(levelId) {
 }
 
 function body(x, y, w, h, magnetic) {
-  return { x, y, w, h, vx: 0, vy: 0, magnetic, magnetFxCooldown: 0 };
+  return { x, y, w, h, vx: 0, vy: 0, magnetic, magnetFxCooldown: 0, startX: x, startY: y };
 }
 
 function showScreen(id) {
@@ -170,7 +172,7 @@ function updatePlayer(dt) {
   applyRobotMagnetism(dt);
   p.coyote = p.grounded ? .1 : Math.max(0, p.coyote - dt);
   p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
-  if (p.holdPickup && p.carry) p.throwCharge = Math.min(1, p.throwCharge + dt / THROW_HOLD_TIME);
+  if (p.holdPickup && p.carry && p.pickupStartedCarrying) p.throwCharge = Math.min(1, p.throwCharge + dt / THROW_HOLD_TIME);
   if (p.jumpBuffer && p.coyote) {
     p.vy = -JUMP_SPEED;
     p.grounded = false;
@@ -252,7 +254,28 @@ function moveBody(entity, dt, solidList) {
     entity.vy = 0;
   }
   entity.x = clamp(entity.x, 20, W - entity.w - 20);
-  if (entity.y > H + 80) failLevel("The package line ate the delivery.");
+  if (entity.y > H + 80) handleFallout(entity);
+}
+
+function handleFallout(entity) {
+  if (entity === game.player) {
+    failLevel("The robot fell out of the delivery lane.");
+    return;
+  }
+  if (entity === game.package) {
+    failLevel("The package fell out of the delivery lane.");
+    return;
+  }
+  if (game.boxes.includes(entity)) resetBox(entity);
+}
+
+function resetBox(box) {
+  box.x = box.startX;
+  box.y = box.startY;
+  box.vx = 0;
+  box.vy = 0;
+  box.grounded = false;
+  box.magnetFxCooldown = .2;
 }
 
 function solids() {
@@ -476,7 +499,8 @@ function animateStamps(runStamps, bestStamps) {
 }
 
 function failLevel(reason) {
-  if (!game || game.mode !== "playing") return;
+  if (!game || game.mode !== "playing" || game.failQueued) return;
+  game.failQueued = true;
   game.mode = "failed";
   game.shake = 10;
   ping(95, .08, "sawtooth");
@@ -694,12 +718,13 @@ function drawPackageShadow() {
 
 function drawThrowPreview() {
   const p = game.player;
-  if (!p.carry || !p.holdPickup || p.throwCharge <= .05) return;
+  if (!p.carry || !p.holdPickup || !p.pickupStartedCarrying || p.throwCharge <= .05) return;
   const power = p.throwCharge;
   let x = game.package.x + game.package.w / 2;
   let y = game.package.y + game.package.h / 2;
-  let vx = p.vx + p.facing * (250 + power * 390);
-  let vy = -150 - power * 210;
+  const throwVelocity = calculateThrowVelocity(p, power);
+  let vx = throwVelocity.vx;
+  let vy = throwVelocity.vy;
   ctx.save();
   ctx.fillStyle = "rgba(77,183,255,.75)";
   for (let i = 0; i < 18; i++) {
@@ -967,19 +992,18 @@ function releasePickupAction() {
     return;
   }
   const pack = game.package;
-  const charged = p.throwCharge > .18;
-  const power = charged ? p.throwCharge : 0;
+  const throwVelocity = calculateThrowVelocity(p, p.throwCharge);
   p.carry = false;
   pack.carried = false;
   pack.pickupCooldown = PICKUP_COOLDOWN;
   p.pickupCooldown = PICKUP_COOLDOWN;
-  pack.vx = p.vx + p.facing * (charged ? 250 + power * 390 : 95);
-  pack.vy = charged ? -150 - power * 210 : -55;
+  pack.vx = throwVelocity.vx;
+  pack.vy = throwVelocity.vy;
   p.throwCharge = 0;
   p.pickupStartedCarrying = false;
   game.messageTimer = 0;
-  burst(pack.x + pack.w / 2, pack.y + pack.h / 2, charged ? colors.blue : colors.yellow, charged ? 14 : 6);
-  ping(charged ? 380 + power * 180 : 300, charged ? .06 : .03, charged ? "sawtooth" : "triangle");
+  burst(pack.x + pack.w / 2, pack.y + pack.h / 2, throwVelocity.charged ? colors.blue : colors.yellow, throwVelocity.charged ? 14 : 6);
+  ping(throwVelocity.charged ? 380 + throwVelocity.power * 180 : 300, throwVelocity.charged ? .06 : .03, throwVelocity.charged ? "sawtooth" : "triangle");
 }
 
 function burst(x, y, color, count) {
@@ -1029,6 +1053,17 @@ function rects(a, b) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function calculateThrowVelocity(player, charge) {
+  const power = clamp(charge, 0, 1);
+  const charged = power > THROW_CHARGE_THRESHOLD;
+  return {
+    charged,
+    power,
+    vx: player.vx + player.facing * (charged ? 265 + power * 430 : 92),
+    vy: charged ? -160 - power * 230 : -54
+  };
 }
 
 function handleAction(action) {
