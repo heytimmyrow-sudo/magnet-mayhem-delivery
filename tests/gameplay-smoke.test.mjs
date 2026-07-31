@@ -4,10 +4,12 @@ import test from "node:test";
 import vm from "node:vm";
 
 import { expansionRegistry } from "../expansions/expansion-registry.js";
+import { STRINGS, text as t } from "../localization/en.js";
 
 const gameSource = (await readFile(new URL("../game.js", import.meta.url), "utf8"))
   .replace(/^\uFEFF/, "")
   .replace(/^import .*;\r?\n/gm, "")
+  .replace(/\r?\ninstallTestApi\(\);\r?\nbootstrap\(\);\s*$/, "\n")
   .concat(`
 globalThis.gameplayTestApi = {
   makeGame,
@@ -80,6 +82,21 @@ const windowMock = {
 };
 const context = vm.createContext({
   expansionRegistry,
+  STRINGS,
+  t,
+  poki: {
+    local: true,
+    enabled: false,
+    initialized: false,
+    playing: false,
+    adActive: false,
+    gameplayStart: noop,
+    gameplayStop: noop,
+    commercialBreak: async () => false,
+    initialize: async () => false,
+    loadingComplete: noop,
+    onAdStateChange: noop
+  },
   loadSave: freshSave,
   saveProgress: () => true,
   recordLevelResult: () => ({}),

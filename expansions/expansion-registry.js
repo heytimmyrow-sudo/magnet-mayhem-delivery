@@ -1,56 +1,51 @@
 import { baseGameLevels } from "../levels/base-game.js";
+import { expansionText } from "../localization/en.js";
 
 export const expansionRegistry = [
   {
     id: "base_game",
-    name: "Base Game",
+    ...expansionText("base_game"),
     version: "1.0.0",
-    description: "Fifteen short factory deliveries that teach polarity flipping, package handling, hazards, and compact puzzle routes.",
     cover: "M",
     availability: "installed",
     levels: baseGameLevels
   },
   {
     id: "factory_after_dark",
-    name: "Factory After Dark",
+    ...expansionText("factory_after_dark"),
     version: "0.1.0",
-    description: "Night-shift routes with shutters, searchlights, and stronger magnetic pulses.",
     cover: "☾",
     availability: "locked",
     levels: []
   },
   {
     id: "frozen_warehouse",
-    name: "Frozen Warehouse",
+    ...expansionText("frozen_warehouse"),
     version: "0.1.0",
-    description: "Slippery floors and chilly conveyor puzzles for careful package control.",
     cover: "*",
     availability: "coming_soon",
     levels: []
   },
   {
     id: "zero_gravity_shipping",
-    name: "Zero-Gravity Shipping",
+    ...expansionText("zero_gravity_shipping"),
     version: "0.1.0",
-    description: "Orbital shipping bays where polarity nudges everything through low gravity.",
     cover: "0G",
     availability: "coming_soon",
     levels: []
   },
   {
     id: "robot_recycling_center",
-    name: "Robot Recycling Center",
+    ...expansionText("robot_recycling_center"),
     version: "0.1.0",
-    description: "Compressed scrap mazes with crushers, plates, and magnetic box chains.",
     cover: "R",
     availability: "locked",
     levels: []
   },
   {
     id: "future_pack_slot_01",
-    name: "Future Pack Slot",
+    ...expansionText("future_pack_slot_01"),
     version: "0.0.0",
-    description: "Reserved for a later delivery district.",
     cover: "+",
     availability: "coming_soon",
     levels: []

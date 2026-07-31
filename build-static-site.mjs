@@ -4,7 +4,9 @@ const fileNames = [
   "index.html",
   "styles.css",
   "game.js",
+  "poki-wrapper.js",
   "save-system.js",
+  "localization/en.js",
   "levels/base-game.js",
   "expansions/expansion-registry.js"
 ];
@@ -19,7 +21,9 @@ const contentTypes = {
   "index.html": "text/html; charset=utf-8",
   "styles.css": "text/css; charset=utf-8",
   "game.js": "text/javascript; charset=utf-8",
+  "poki-wrapper.js": "text/javascript; charset=utf-8",
   "save-system.js": "text/javascript; charset=utf-8",
+  "localization/en.js": "text/javascript; charset=utf-8",
   "levels/base-game.js": "text/javascript; charset=utf-8",
   "expansions/expansion-registry.js": "text/javascript; charset=utf-8"
 };

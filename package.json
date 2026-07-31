@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build-static-site.mjs",
-    "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "node --test tests/gameplay-smoke.test.mjs",
-    "test:e2e": "playwright test"
+    "build": "node build-static-site.mjs && node build-size-report.mjs",
+    "size": "node build-size-report.mjs",
+    "test": "npm run build && npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tests/gameplay-smoke.test.mjs tests/readiness.test.mjs",
+    "test:e2e": "playwright test",
+    "test:install-browsers": "playwright install chromium firefox webkit"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1"

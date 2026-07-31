@@ -1,5 +1,7 @@
 ﻿import { expansionRegistry } from "./expansions/expansion-registry.js";
 import { exportSave, hasBackupSave, importSaveFile, loadSave, recordLevelResult, resetSave, restoreBackupSave, saveProgress } from "./save-system.js";
+import { applyDocumentText, STRINGS, text as t } from "./localization/en.js";
+import { poki } from "./poki-wrapper.js";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -27,7 +29,6 @@ const PLATE_RELEASE_GRACE = .14;
 const DOOR_CLEARANCE = 6;
 const PACKAGE_BOUNCE_THRESHOLD = 340;
 const keys = new Set();
-const heldTouch = new Set();
 const effects = [];
 let save = loadSave();
 let game = null;
@@ -35,7 +36,14 @@ let lastFrame = 0;
 let audioCtx = null;
 let musicTimer = null;
 let frameRequest = 0;
+let touchMoveAxis = 0;
+let movePointer = null;
+let packagePointer = null;
+let inputEnabled = true;
+let lifecyclePaused = false;
+let userInteracted = false;
 let testPaused = false;
+let adPausedGame = false;
 
 const screens = ["titleScreen", "menuScreen", "packsScreen", "gameScreen"];
 const colors = {
@@ -49,19 +57,17 @@ const colors = {
 };
 
 const TUTORIALS = {
-  training_pickup: [
-    { id: "move", text: "Move to the package.", key: "A / D", test: (g) => g.player.x > g.level.spawn.x + 54 },
-    { id: "pickup", text: "Press E to pick up the package.", key: "E", test: (g) => g.player.carry },
-    { id: "carry", text: "Carry the package to the green SHIP chute.", key: "D", test: (g) => rects(g.player, g.level.delivery) || g.player.x > g.level.delivery.x - 90 },
-    { id: "deliver", text: "Enter the chute with both robot and package.", key: "SHIP", test: (g) => rects(g.player, g.level.delivery) && rects(g.package, g.level.delivery) }
-  ],
-  first_flip: [
-    { id: "drop", text: "Drop the package near the magnet.", key: "E", test: (g) => !g.player.carry && nearAnyMagnet(g.package, 235) },
-    { id: "flip", text: "Press F to flip polarity.", key: "F", test: (g) => g.didFlip },
-    { id: "watch", text: "Watch PUSH become PULL and follow the arrow.", key: "PUSH/PULL", test: (g) => g.package.x > 385 || g.package.vx > 120 },
-    { id: "deliver", text: "Deliver both robot and package.", key: "SHIP", test: (g) => rects(g.player, g.level.delivery) && rects(g.package, g.level.delivery) }
-  ]
+  training_pickup: STRINGS.tutorials.training_pickup.map((step) => ({ ...step })),
+  first_flip: STRINGS.tutorials.first_flip.map((step) => ({ ...step }))
 };
+TUTORIALS.training_pickup[0].test = (g) => g.player.x > g.level.spawn.x + 54;
+TUTORIALS.training_pickup[1].test = (g) => g.player.carry;
+TUTORIALS.training_pickup[2].test = (g) => rects(g.player, g.level.delivery) || g.player.x > g.level.delivery.x - 90;
+TUTORIALS.training_pickup[3].test = (g) => rects(g.player, g.level.delivery) && rects(g.package, g.level.delivery);
+TUTORIALS.first_flip[0].test = (g) => !g.player.carry && nearAnyMagnet(g.package, 235);
+TUTORIALS.first_flip[1].test = (g) => g.didFlip;
+TUTORIALS.first_flip[2].test = (g) => g.package.x > 385 || g.package.vx > 120;
+TUTORIALS.first_flip[3].test = (g) => rects(g.player, g.level.delivery) && rects(g.package, g.level.delivery);
 
 function makeGame(expansionId = "base_game", levelIndex = 0) {
   const expansion = expansionRegistry.find((pack) => pack.id === expansionId) || expansionRegistry[0];
@@ -89,7 +95,7 @@ function makeGame(expansionId = "base_game", levelIndex = 0) {
     boxes: (level.boxes || []).map((b) => ({ ...body(b.x, b.y, b.w, b.h, true), startX: b.x, startY: b.y })),
     hazards: [...(level.hazards || []), ...(level.movingHazards || [])].map((h) => ({ ...h, baseX: h.x, baseY: h.y, t: Math.random() * 3 })),
     plates: (level.plates || []).map((p) => ({ ...p, pressed: false, releaseTimer: 0 })),
-    message: level.hint || "Deliver the robot and package to the green chute.",
+    message: level.hint || t("game.defaultMessage"),
     messageTimer: 7,
     tip: "",
     tutorial: makeTutorial(level.id)
@@ -107,20 +113,31 @@ function body(x, y, w, h, magnetic) {
 }
 
 function showScreen(id) {
+  if (id !== "gameScreen") {
+    poki.gameplayStop();
+    stopMusic();
+    resetTouchInput();
+  }
   screens.forEach((screen) => $(`#${screen}`).classList.toggle("hidden", screen !== id));
   $("#overlay").classList.add("hidden");
   $("#settingsPanel").classList.add("hidden");
   if (id !== "gameScreen") game = null;
   renderMenus();
   updateTutorialUi();
+  if (id !== "gameScreen") window.setTimeout(() => $(`#${id} button:not([disabled])`)?.focus({ preventScroll: true }), 0);
 }
 
 function startLevel(expansionId, index) {
   game = makeGame(expansionId, index);
+  lifecyclePaused = false;
+  inputEnabled = true;
   lastFrame = 0;
   showScreen("gameScreen");
   updateHud();
   updateTutorialUi();
+  updateMobileTutorial();
+  poki.gameplayStart();
+  startMusic();
   ping(220, .04, "square");
   if (!frameRequest) frameRequest = requestAnimationFrame(loop);
 }
@@ -176,9 +193,10 @@ function update(dt) {
 
 function updatePlayer(dt) {
   const p = game.player;
-  const left = keys.has("arrowleft") || keys.has("a") || heldTouch.has("left");
-  const right = keys.has("arrowright") || keys.has("d") || heldTouch.has("right");
-  const dir = (right ? 1 : 0) - (left ? 1 : 0);
+  const left = inputEnabled && (keys.has("arrowleft") || keys.has("a"));
+  const right = inputEnabled && (keys.has("arrowright") || keys.has("d"));
+  const keyboardDirection = (right ? 1 : 0) - (left ? 1 : 0);
+  const dir = keyboardDirection || (inputEnabled ? touchMoveAxis : 0);
   if (dir) p.facing = dir;
   const target = dir * PLAYER_SPEED;
   p.vx += (target - p.vx) * Math.min(1, dt * (dir ? 16 : 10));
@@ -331,11 +349,11 @@ function landOnSolid(entity, solid, wasGrounded, enteringVy) {
 
 function handleFallout(entity) {
   if (entity === game.player) {
-    failLevel("The robot fell out of the delivery lane.");
+    failLevel(t("game.robotFell"));
     return;
   }
   if (entity === game.package) {
-    failLevel("The package fell out of the delivery lane.");
+    failLevel(t("game.packageFell"));
     return;
   }
   if (game.boxes.includes(entity)) resetBox(entity);
@@ -523,10 +541,10 @@ function updateTip() {
   const p = game.player;
   const pack = game.package;
   const nearPackage = Math.hypot((p.x + p.w / 2) - (pack.x + pack.w / 2), (p.y + p.h / 2) - (pack.y + pack.h / 2)) < 74;
-  if (!p.carry && nearPackage) game.tip = "Press E to pick up";
-  else if (p.carry) game.tip = "Tap E to drop, hold E to throw";
-  else if ((game.level.magnets || []).length) game.tip = "Press F to flip polarity";
-  else game.tip = "Reach the green SHIP chute";
+  if (!p.carry && nearPackage) game.tip = t("game.pickupTip");
+  else if (p.carry) game.tip = t("game.carryTip");
+  else if ((game.level.magnets || []).length) game.tip = t("game.polarityTip");
+  else game.tip = t("game.deliveryTip");
 }
 
 function updateTutorial(dt) {
@@ -565,14 +583,7 @@ function skipTutorial() {
 function updateTutorialUi() {
   const step = game?.tutorial ? currentTutorialStep() : null;
   $("#skipTutorialBtn").classList.toggle("hidden", !step);
-  $$("[data-touch]").forEach((button) => button.classList.toggle("tutorial-highlight", step && touchMatchesStep(button.dataset.touch, step.key)));
-}
-
-function touchMatchesStep(touch, key) {
-  if (key.includes("A") || key === "D") return touch === "left" || touch === "right";
-  if (key === "E") return touch === "pickup";
-  if (key === "F") return touch === "flip";
-  return false;
+  $("#touchPolarityBtn").classList.toggle("tutorial-highlight", Boolean(step?.key.includes("F")));
 }
 
 function nearAnyMagnet(entity, distance) {
@@ -586,7 +597,7 @@ function checkHazards() {
     const active = h.activePolarity == null || h.activePolarity === game.polarity;
     if (!active) continue;
     if (h.type === "spikes" || h.type === "electric" || h.type === "crusher") {
-      if (rects(game.player, h)) failLevel("The robot got scrambled.");
+      if (rects(game.player, h)) failLevel(t("game.robotScrambled"));
       if (rects(game.package, h)) damagePackage(h.type);
       game.boxes.forEach((box) => { if (rects(box, h) && h.type !== "electric") box.vx *= -1; });
     }
@@ -603,6 +614,8 @@ function checkDelivery(dt) {
 function completeLevel() {
   if (game.mode !== "playing") return;
   game.mode = "complete";
+  poki.gameplayStop();
+  stopMusic();
   const result = recordLevelResult(save, game.expansion.id, game.level.id, game.elapsed, game.package.health, game.level.targetTime);
   save.tutorial.completed[game.level.id] = true;
   saveProgress(save);
@@ -614,29 +627,31 @@ function completeLevel() {
 
 function showLevelComplete(result) {
   const isFinal = game.levelIndex === game.expansion.levels.length - 1;
-  const previous = result.previousBest ? `${result.previousBest.toFixed(1)}s` : "None";
-  const bestLine = result.isNewBest ? `New best: ${result.bestTime.toFixed(1)}s` : `Best remains: ${result.bestTime.toFixed(1)}s`;
-  showOverlay("Delivery Complete", "", "", [
-    [isFinal ? "Factory Results" : "Next", () => isFinal ? showFactoryCleared() : startLevel(game.expansion.id, game.levelIndex + 1), "primary"],
-    ["Levels", () => showScreen("menuScreen")],
-    ["Restart", () => startLevel(game.expansion.id, game.levelIndex)]
+  const previous = result.previousBest ? `${result.previousBest.toFixed(1)}s` : t("overlay.none");
+  const bestLine = result.isNewBest
+    ? t("overlay.newBest", { time: result.bestTime.toFixed(1) })
+    : t("overlay.bestRemains", { time: result.bestTime.toFixed(1) });
+  showOverlay(t("overlay.deliveryComplete"), "", "", [
+    [isFinal ? t("overlay.factoryResults") : t("overlay.next"), () => isFinal ? showFactoryCleared() : startLevel(game.expansion.id, game.levelIndex + 1), "primary"],
+    [t("overlay.levels"), () => showScreen("menuScreen")],
+    [t("overlay.restart"), () => startLevel(game.expansion.id, game.levelIndex)]
   ]);
   $("#overlayText").innerHTML = `
-    <span class="result-line"><b>Final time</b>${game.elapsed.toFixed(1)}s</span>
-    <span class="result-line"><b>Target time</b>${game.level.targetTime}s</span>
-    <span class="result-line"><b>Previous best</b>${previous}</span>
+    <span class="result-line"><b>${t("overlay.finalTime")}</b>${game.elapsed.toFixed(1)}s</span>
+    <span class="result-line"><b>${t("overlay.targetTime")}</b>${game.level.targetTime}s</span>
+    <span class="result-line"><b>${t("overlay.previousBest")}</b>${previous}</span>
     <span class="result-line highlight">${bestLine}</span>
-    <span class="result-line"><b>Package durability</b>${game.package.health}/3</span>
-    <span class="result-line"><b>Run stamps</b>${result.runStamps}/3</span>
-    <span class="result-line"><b>Best stamps</b>${result.bestStamps}/3</span>
-    <span class="result-line"><b>Progress</b>Level ${game.levelIndex + 1} of ${game.expansion.levels.length}</span>`;
+    <span class="result-line"><b>${t("overlay.packageDurability")}</b>${game.package.health}/3</span>
+    <span class="result-line"><b>${t("overlay.runStamps")}</b>${result.runStamps}/3</span>
+    <span class="result-line"><b>${t("overlay.bestStamps")}</b>${result.bestStamps}/3</span>
+    <span class="result-line"><b>${t("overlay.progress")}</b>${t("overlay.progressValue", { current: game.levelIndex + 1, total: game.expansion.levels.length })}</span>`;
   animateStamps(result.runStamps, result.bestStamps);
 }
 
 function showFactoryCleared() {
-  showOverlay("Factory Cleared", "Every base-game delivery is complete. Future expansion slots are already wired in.", "", [
-    ["Expansion Packs", () => showScreen("packsScreen"), "primary"],
-    ["Title", () => showScreen("titleScreen")]
+  showOverlay(t("overlay.factoryCleared"), t("overlay.factoryClearedBody"), "", [
+    [t("menu.expansions"), () => showScreen("packsScreen"), "primary"],
+    [t("overlay.titleScreen"), () => showScreen("titleScreen")]
   ]);
   $("#stampResult").innerHTML = `<span class="stamp-icon earned">★</span><span class="stamp-icon earned">★</span><span class="stamp-icon earned">★</span>`;
 }
@@ -656,6 +671,8 @@ function failLevel(reason) {
   if (!game || game.mode !== "playing" || game.failQueued) return;
   game.failQueued = true;
   game.mode = "failed";
+  poki.gameplayStop();
+  stopMusic();
   game.shake = 10;
   ping(95, .08, "sawtooth");
   window.setTimeout(() => game && startLevel(game.expansion.id, game.levelIndex), 550);
@@ -673,7 +690,8 @@ function damagePackage(reason) {
   game.shake = 6;
   burst(pack.x + pack.w / 2, pack.y + pack.h / 2, colors.red, 14);
   ping(140, .05, "square");
-  if (pack.health <= 0) failLevel(`Package destroyed by ${reason}.`);
+  const localizedReason = STRINGS.game.damageReasons[reason === "hard impact" ? "hardImpact" : reason] || reason;
+  if (pack.health <= 0) failLevel(t("game.packageDestroyed", { reason: localizedReason }));
 }
 
 function draw() {
@@ -784,12 +802,12 @@ function drawMagnets() {
     ctx.fillStyle = m.polarity === 1 ? colors.red : colors.blue;
     roundRect(m.x - 26, m.y - 26, 52, 52, 10, true);
     ctx.fillStyle = "#101825";
-    ctx.font = "900 20px Nunito";
+    ctx.font = "900 20px system-ui";
     ctx.textAlign = "center";
     ctx.fillText(m.polarity === 1 ? "N" : "S", m.x, m.y + 7);
     ctx.fillStyle = activePull ? "#cceeff" : "#ffd8df";
-    ctx.font = "900 13px Nunito";
-    ctx.fillText(activePull ? "PULL" : "PUSH", m.x, m.y - 38);
+    ctx.font = "900 13px system-ui";
+    ctx.fillText(activePull ? t("game.pull") : t("game.push"), m.x, m.y - 38);
     ctx.restore();
   }
 }
@@ -906,9 +924,9 @@ function drawDelivery() {
   ctx.fillStyle = colors.green;
   ctx.fillRect(d.x + 10, d.y + 10, d.w - 20, 10);
   ctx.fillStyle = "#bfffd8";
-  ctx.font = "900 16px Nunito";
+  ctx.font = "900 16px system-ui";
   ctx.textAlign = "center";
-  ctx.fillText("SHIP", d.x + d.w / 2, d.y + d.h / 2 + 12);
+  ctx.fillText(t("game.ship"), d.x + d.w / 2, d.y + d.h / 2 + 12);
 }
 
 function drawPackageShadow() {
@@ -1121,7 +1139,7 @@ function drawMessage() {
   ctx.fillStyle = "rgba(10,16,25,.72)";
   roundRect(190, 18, 580, 46, 8, true);
   ctx.fillStyle = "#f4f7fb";
-  ctx.font = "900 16px Nunito";
+  ctx.font = "900 16px system-ui";
   ctx.textAlign = "center";
   ctx.fillText(text, W / 2, 48);
 }
@@ -1141,16 +1159,16 @@ function drawTutorial() {
   ctx.fillStyle = colors.yellow;
   roundRect(x + 18, y + 19, 86, 38, 8, true);
   ctx.fillStyle = "#1a2332";
-  ctx.font = "900 18px Nunito";
+  ctx.font = "900 18px system-ui";
   ctx.textAlign = "center";
   ctx.fillText(step.key, x + 61, y + 44);
   ctx.fillStyle = "#f4f7fb";
-  ctx.font = "900 17px Nunito";
+  ctx.font = "900 17px system-ui";
   ctx.textAlign = "left";
   ctx.fillText(step.text, x + 122, y + 33);
   ctx.fillStyle = "#9cafc6";
-  ctx.font = "800 12px Nunito";
-  ctx.fillText(`Step ${game.tutorial.index + 1} of ${game.tutorial.steps.length}`, x + 122, y + 54);
+  ctx.font = "800 12px system-ui";
+  ctx.fillText(t("game.tutorialStep", { current: game.tutorial.index + 1, total: game.tutorial.steps.length }), x + 122, y + 54);
   ctx.restore();
 }
 
@@ -1177,10 +1195,10 @@ function renderMenus() {
   $("#levelGrid").innerHTML = base.levels.map((level, index) => {
     const key = `${base.id}:${level.id}`;
     const stamps = Number(save.stamps[key]) || 0;
-    const best = save.bestTimes[key] ? `${Number(save.bestTimes[key]).toFixed(1)}s` : "No time yet";
+    const best = save.bestTimes[key] ? `${Number(save.bestTimes[key]).toFixed(1)}s` : t("menu.noTime");
     return `<button class="level-card" data-level="${index}" type="button">
       <b>${index + 1}. ${level.name}</b>
-      <small>Target ${level.targetTime}s - ${best}</small>
+      <small>${t("menu.target", { time: level.targetTime, best })}</small>
       <div class="stamps">${"*".repeat(stamps)}${"-".repeat(3 - stamps)}</div>
     </button>`;
   }).join("");
@@ -1188,24 +1206,26 @@ function renderMenus() {
     const possible = pack.levels.length * 3;
     const earned = pack.levels.reduce((sum, level) => sum + (Number(save.stamps[`${pack.id}:${level.id}`]) || 0), 0);
     const pct = possible ? Math.round((earned / possible) * 100) : 0;
-    const status = pack.availability === "installed" ? "Play" : pack.availability === "locked" ? "Locked" : "Coming soon";
+    const status = pack.availability === "installed" ? t("menu.play") : pack.availability === "locked" ? t("menu.locked") : t("menu.comingSoon");
     return `<button class="pack-card ${pack.availability !== "installed" ? "locked" : ""}" data-pack="${pack.id}" type="button">
       <span class="pack-icon">${pack.cover}</span>
       <b>${pack.name}</b>
       <small>${pack.description}</small>
-      <small>${pack.levels.length} levels - ${pct}% - ${earned}/${possible || 0} stamps</small>
+      <small>${t("menu.levelSummary", { count: pack.levels.length, percent: pct, earned, possible: possible || 0 })}</small>
       <div class="stamps">${status}</div>
     </button>`;
   }).join("");
 }
 
 function updateHud() {
-  $("#hudLevel").textContent = `Level ${game.levelIndex + 1}: ${game.level.name}`;
+  $("#hudLevel").textContent = t("hud.level", { number: game.levelIndex + 1, name: game.level.name });
   $("#hudPack").textContent = game.expansion.name;
   $("#timer").textContent = game.elapsed.toFixed(1);
   $$(".durability i").forEach((heart, i) => heart.classList.toggle("broken", i >= game.package.health));
-  $("#polarityBadge").textContent = game.polarity === 1 ? "NORTH" : "SOUTH";
+  $("#polarityBadge").textContent = game.polarity === 1 ? t("hud.north") : t("hud.south");
   $("#polarityBadge").className = `polarity ${game.polarity === 1 ? "north" : "south"}`;
+  $("#touchPolarityBtn").textContent = game.polarity === 1 ? "N" : "S";
+  $("#touchPolarityBtn").classList.toggle("south", game.polarity !== 1);
 }
 
 function showOverlay(title, text, stamps, actions) {
@@ -1226,11 +1246,26 @@ function showOverlay(title, text, stamps, actions) {
 function pauseGame() {
   if (!game || game.mode !== "playing") return;
   game.mode = "paused";
-  showOverlay("Paused", "Factory time is stopped. Your package is exactly as anxious as you left it.", "", [
-    ["Resume", () => { $("#overlay").classList.add("hidden"); game.mode = "playing"; lastFrame = 0; }, "primary"],
-    ["Restart", () => startLevel(game.expansion.id, game.levelIndex)],
-    ["Levels", () => showScreen("menuScreen")]
+  inputEnabled = false;
+  poki.gameplayStop();
+  pauseAudio();
+  resetTouchInput();
+  showOverlay(t("overlay.pausedTitle"), t("overlay.pausedBody"), "", [
+    [t("overlay.resume"), resumeGame, "primary"],
+    [t("overlay.restart"), () => startLevel(game.expansion.id, game.levelIndex)],
+    [t("overlay.levels"), () => showScreen("menuScreen")]
   ]);
+}
+
+function resumeGame() {
+  if (!game || game.mode !== "paused") return;
+  $("#overlay").classList.add("hidden");
+  game.mode = "playing";
+  lifecyclePaused = false;
+  inputEnabled = true;
+  lastFrame = 0;
+  resumeAudio();
+  poki.gameplayStart();
 }
 
 function flipPolarity() {
@@ -1284,13 +1319,13 @@ function releasePickupAction() {
     return;
   }
   const pack = game.package;
-  const charged = p.throwCharge >= THROW_CHARGE_THRESHOLD;
+  const charged = p.throwCharge >= THROW_CHARGE_THRESHOLD || Boolean(p.touchThrowAim);
   const power = charged ? p.throwCharge : 0;
   const releasePosition = findSafeReleasePosition(pack, p, solids(), charged);
   if (!releasePosition) {
     p.throwCharge = 0;
     p.pickupStartedCarrying = false;
-    game.message = "Move away from the wall before releasing the package.";
+    game.message = t("game.releaseBlocked");
     game.messageTimer = 1.8;
     return;
   }
@@ -1307,12 +1342,19 @@ function releasePickupAction() {
   p.throwAnim = charged ? .22 : .1;
   p.throwCharge = 0;
   p.pickupStartedCarrying = false;
+  p.touchThrowAim = null;
   game.messageTimer = 0;
   burst(pack.x + pack.w / 2, pack.y + pack.h / 2, charged ? colors.blue : colors.yellow, charged ? 14 : 6);
   ping(charged ? 380 + power * 180 : 300, charged ? .06 : .03, charged ? "sawtooth" : "triangle");
 }
 
 function releaseVelocity(player, power, charged) {
+  if (charged && player.touchThrowAim) {
+    const { x, y } = player.touchThrowAim;
+    const length = Math.max(1, Math.hypot(x, y));
+    const speed = 300 + power * 400;
+    return { vx: player.vx + x / length * speed, vy: y / length * speed };
+  }
   return {
     vx: charged ? player.vx + player.facing * (250 + power * 390) : player.vx * .35,
     vy: charged ? -150 - power * 210 : Math.min(0, player.vy * .15)
@@ -1346,7 +1388,6 @@ function findSafeReleasePosition(pack, player, solidList, charged) {
   }
   return null;
 }
-
 function burst(x, y, color, count) {
   for (let i = 0; i < count; i++) effects.push({
     x, y,
@@ -1359,8 +1400,10 @@ function burst(x, y, color, count) {
 }
 
 function ping(freq, duration, type = "sine") {
-  if (!save.settings.sound) return;
-  audioCtx ||= new AudioContext();
+  if (!save.settings.sound || !userInteracted || document.hidden || poki.adActive) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  audioCtx ||= new AudioContextClass();
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = type;
@@ -1374,7 +1417,7 @@ function ping(freq, duration, type = "sine") {
 
 function startMusic() {
   stopMusic();
-  if (!save.settings.music) return;
+  if (!save.settings.music || document.hidden || poki.adActive || game?.mode !== "playing") return;
   let step = 0;
   musicTimer = window.setInterval(() => {
     if (!game || game.mode !== "playing") return;
@@ -1388,6 +1431,16 @@ function stopMusic() {
   musicTimer = null;
 }
 
+function pauseAudio() {
+  stopMusic();
+  audioCtx?.suspend?.().catch(() => {});
+}
+
+function resumeAudio() {
+  audioCtx?.resume?.().catch(() => {});
+  startMusic();
+}
+
 function rects(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -1396,7 +1449,7 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function installGameplayTestApi() {
+function installTestApi() {
   if (typeof location === "undefined"
     || !["127.0.0.1", "localhost"].includes(location.hostname)
     || new URLSearchParams(location.search).get("test") !== "1") return;
@@ -1416,6 +1469,11 @@ function installGameplayTestApi() {
       levels: expansionRegistry[0].levels,
       expansionIds: expansionRegistry.map((pack) => pack.id),
       get game() { return game; },
+      get save() { return save; },
+      get platform() {
+        return { local: poki.local, enabled: poki.enabled, initialized: poki.initialized, playing: poki.playing, adActive: poki.adActive };
+      },
+      get input() { return { enabled: inputEnabled, touchMoveAxis, lifecyclePaused }; },
       snapshot() {
         const snapshotBody = ({ x, y, w, h, vx, vy, startX, startY, grounded, magnetic }) => ({
           x, y, w, h, vx, vy, startX, startY, grounded, magnetic
@@ -1440,6 +1498,7 @@ function installGameplayTestApi() {
       start(index) {
         startLevel("base_game", index);
         testPaused = true;
+        draw();
         return game;
       },
       restart() {
@@ -1464,6 +1523,11 @@ function installGameplayTestApi() {
       polarityImpulse,
       releasePickupAction,
       releaseVelocity,
+      throwVelocity: releaseVelocity,
+      resumeGame,
+      pauseForLifecycle,
+      dismissMobileTutorial,
+      commercialBreak: () => poki.commercialBreak(),
       solids,
       rects
     }
@@ -1471,6 +1535,7 @@ function installGameplayTestApi() {
 }
 
 function handleAction(action) {
+  if (!inputEnabled) return;
   if (action === "jump" && game) game.player.jumpBuffer = .12;
   if (action === "pickup") startPickupAction();
   if (action === "flip") flipPolarity();
@@ -1478,7 +1543,17 @@ function handleAction(action) {
 }
 
 document.addEventListener("keydown", (event) => {
+  unlockAudio();
   const key = event.key.toLowerCase();
+  const modalVisible = !$("#settingsPanel").classList.contains("hidden") || !$("#overlay").classList.contains("hidden");
+  if (modalVisible && handleMenuKey(event)) {
+    return;
+  }
+  if (!$("#gameScreen").classList.contains("hidden")) {
+    if (!inputEnabled) return;
+  } else if (handleMenuKey(event)) {
+    return;
+  }
   if (["arrowleft", "arrowright", "arrowup", " ", "a", "d", "w", "e", "f", "shift", "r", "escape"].includes(key)) event.preventDefault();
   keys.add(key);
   if (key === "w" || key === "arrowup" || key === " ") handleAction("jump");
@@ -1490,15 +1565,19 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keyup", (event) => {
   const key = event.key.toLowerCase();
   keys.delete(key);
-  if (key === "e") releasePickupAction();
+  if (key === "e" && inputEnabled) releasePickupAction();
 });
-document.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
-window.addEventListener("blur", pauseGame);
+document.addEventListener("touchmove", preventPageGesture, { passive: false });
+document.addEventListener("gesturestart", preventPageGesture, { passive: false });
+document.addEventListener("gesturechange", preventPageGesture, { passive: false });
+document.addEventListener("gestureend", preventPageGesture, { passive: false });
+window.addEventListener("wheel", preventPageGesture, { passive: false });
+window.addEventListener("blur", pauseForLifecycle);
+document.addEventListener("visibilitychange", () => { if (document.hidden) pauseForLifecycle(); });
 
 $("#playBtn").addEventListener("click", () => {
   const firstOpen = expansionRegistry[0].levels.findIndex((level, i) => i === 0 || save.completedLevels[`base_game:${expansionRegistry[0].levels[i - 1].id}`]);
   startLevel("base_game", Math.max(0, firstOpen));
-  startMusic();
 });
 $("#levelSelectBtn").addEventListener("click", () => showScreen("menuScreen"));
 $("#packsBtn").addEventListener("click", () => showScreen("packsScreen"));
@@ -1521,7 +1600,7 @@ $("#settingsSaveBtn").addEventListener("click", () => {
   $("#settingsPanel").classList.add("hidden");
 });
 $("#resetBtn").addEventListener("click", () => {
-  if (confirm("Reset all Magnet Mayhem Delivery progress on this browser? A backup will be kept before deleting.")) {
+  if (confirm(t("settings.resetConfirm"))) {
     save = resetSave();
     renderMenus();
     $("#settingsPanel").classList.add("hidden");
@@ -1529,14 +1608,14 @@ $("#resetBtn").addEventListener("click", () => {
 });
 $("#restoreBackupBtn").addEventListener("click", () => {
   if (!hasBackupSave()) return;
-  if (confirm("Restore the backup save for Magnet Mayhem Delivery? Current progress will be replaced after the backup is validated.")) {
+  if (confirm(t("settings.restoreConfirm"))) {
     try {
       save = restoreBackupSave();
       renderMenus();
       $("#settingsPanel").classList.add("hidden");
-      alert("Backup save restored.");
+      alert(t("settings.restoreSuccess"));
     } catch {
-      alert("The backup save could not be restored.");
+      alert(t("settings.restoreFailure"));
     }
   }
 });
@@ -1547,22 +1626,18 @@ $("#importInput").addEventListener("change", async (event) => {
   try {
     save = await importSaveFile(file);
     renderMenus();
-    alert("Save imported.");
+    alert(t("settings.importSuccess"));
   } catch {
-    alert("That save file was not valid JSON progress.");
+    alert(t("settings.importFailure"));
   }
   event.target.value = "";
 });
-$("#fullscreenBtn").addEventListener("click", () => {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen?.();
-});
+$("#fullscreenBtn").addEventListener("click", toggleFullscreen);
 $$("[data-screen]").forEach((button) => button.addEventListener("click", () => showScreen(button.dataset.screen)));
 $("#levelGrid").addEventListener("click", (event) => {
   const button = event.target.closest("[data-level]");
   if (button) {
     startLevel("base_game", Number(button.dataset.level));
-    startMusic();
   }
 });
 $("#packGrid").addEventListener("click", (event) => {
@@ -1571,39 +1646,228 @@ $("#packGrid").addEventListener("click", (event) => {
   const pack = expansionRegistry.find((item) => item.id === button.dataset.pack);
   if (pack?.availability === "installed" && pack.levels.length) {
     startLevel(pack.id, 0);
-    startMusic();
   }
 });
-$$("[data-touch]").forEach((button) => {
-  const name = button.dataset.touch;
-  const down = (event) => {
-    event.preventDefault();
-    if (event.type === "mousedown" && button.dataset.pointerHandled) return;
-    button.dataset.pointerHandled = "1";
-    window.setTimeout(() => delete button.dataset.pointerHandled, 80);
-    heldTouch.add(name);
-    handleAction(name);
-  };
-  const up = (event) => {
-    event.preventDefault();
-    heldTouch.delete(name);
-    if (name === "pickup") releasePickupAction();
-  };
-  button.addEventListener("pointerdown", down);
-  button.addEventListener("pointerup", up);
-  button.addEventListener("pointercancel", up);
-  button.addEventListener("pointerleave", up);
-  button.addEventListener("mousedown", down);
-  button.addEventListener("mouseup", up);
-  button.addEventListener("mouseleave", up);
-  button.addEventListener("click", (event) => {
-    event.preventDefault();
-    if (button.dataset.pointerHandled) return;
-    if (name !== "left" && name !== "right" && name !== "pickup") handleAction(name);
-  });
+for (const zone of [$("#moveZone"), $("#actionZone")]) {
+  zone.addEventListener("pointerdown", handleTouchStart);
+  zone.addEventListener("pointermove", handleTouchMove);
+  zone.addEventListener("pointerup", handleTouchEnd);
+  zone.addEventListener("pointercancel", handleTouchEnd);
+}
+$("#touchPolarityBtn").addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  handleAction("flip");
 });
+$("#mobileTutorialDismiss").addEventListener("click", dismissMobileTutorial);
+document.addEventListener("pointerdown", unlockAudio, { capture: true });
 
-renderMenus();
-showScreen("titleScreen");
-installGameplayTestApi();
+function preventPageGesture(event) {
+  if (!$("#gameScreen").classList.contains("hidden")) event.preventDefault();
+}
+
+function handleMenuKey(event) {
+  const modal = [$("#settingsPanel"), $("#overlay")].find((element) => !element.classList.contains("hidden"));
+  const screen = modal || screens.map((id) => $(`#${id}`)).find((element) => !element.classList.contains("hidden"));
+  if (!screen || screen.id === "gameScreen") return false;
+  if (event.key === "Escape" && screen.id === "settingsPanel") {
+    event.preventDefault();
+    screen.classList.add("hidden");
+    $("#settingsOpenBtn").focus({ preventScroll: true });
+    return true;
+  }
+  if (event.key === "Escape" && screen.id !== "titleScreen" && screen.id !== "overlay") {
+    event.preventDefault();
+    showScreen("titleScreen");
+    return true;
+  }
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
+  const buttons = [...screen.querySelectorAll("button:not([disabled])")].filter((button) => button.offsetParent !== null);
+  if (!buttons.length) return false;
+  event.preventDefault();
+  const current = Math.max(0, buttons.indexOf(document.activeElement));
+  const direction = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+  buttons[(current + direction + buttons.length) % buttons.length].focus({ preventScroll: true });
+  return true;
+}
+
+function pauseForLifecycle() {
+  if (!game || game.mode !== "playing") return;
+  lifecyclePaused = true;
+  pauseGame();
+}
+
+function unlockAudio() {
+  if (userInteracted) return;
+  userInteracted = true;
+  audioCtx?.resume?.().catch(() => {});
+  if (game?.mode === "playing") startMusic();
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen?.();
+    else await document.documentElement.requestFullscreen?.();
+  } catch {
+    // Fullscreen may be blocked by the host frame or browser policy.
+  }
+}
+
+function resetTouchInput() {
+  touchMoveAxis = 0;
+  movePointer = null;
+  packagePointer = null;
+  $("#moveThumb").style.transform = "translateX(0px)";
+  $("#throwGesture").classList.remove("active");
+  document.body.classList.remove("touch-active");
+}
+
+function canvasPoint(event) {
+  const bounds = $("#gameStage").getBoundingClientRect();
+  return {
+    x: (event.clientX - bounds.left) / bounds.width * W,
+    y: (event.clientY - bounds.top) / bounds.height * H,
+    localX: event.clientX - bounds.left,
+    localY: event.clientY - bounds.top
+  };
+}
+
+function nearPackagePoint(point) {
+  if (!game) return false;
+  const pack = game.package;
+  return Math.hypot(point.x - (pack.x + pack.w / 2), point.y - (pack.y + pack.h / 2)) < 92;
+}
+
+function handleTouchStart(event) {
+  if (!inputEnabled || !game || game.mode !== "playing" || event.pointerType === "mouse") return;
+  event.preventDefault();
+  const point = canvasPoint(event);
+  try {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Synthetic touches and older WebKit builds may not expose capture.
+  }
+  if (nearPackagePoint(point)) {
+    packagePointer = { id: event.pointerId, type: "package", startX: point.x, startY: point.y, localX: point.localX, localY: point.localY, started: performance.now() };
+    startPickupAction();
+    return;
+  }
+  if (event.currentTarget === $("#moveZone")) {
+    movePointer = { id: event.pointerId, startX: event.clientX };
+    document.body.classList.add("touch-active");
+    return;
+  }
+  packagePointer = { id: event.pointerId, type: "jump", startX: point.x, startY: point.y, started: performance.now() };
+}
+
+function handleTouchMove(event) {
+  if (movePointer?.id === event.pointerId) {
+    event.preventDefault();
+    touchMoveAxis = clamp((event.clientX - movePointer.startX) / 58, -1, 1);
+    $("#moveThumb").style.transform = `translateX(${touchMoveAxis * 40}px)`;
+    return;
+  }
+  if (packagePointer?.id !== event.pointerId || packagePointer.type !== "package" || !game?.player.carry) return;
+  event.preventDefault();
+  const point = canvasPoint(event);
+  const aimX = point.x - packagePointer.startX;
+  const aimY = point.y - packagePointer.startY;
+  const distance = Math.hypot(aimX, aimY);
+  if (distance > 12) {
+    game.player.touchThrowAim = { x: aimX, y: aimY };
+    game.player.facing = aimX < 0 ? -1 : 1;
+    game.player.throwCharge = Math.max(game.player.throwCharge, clamp(distance / 180, .25, 1));
+    updateThrowGesture(packagePointer.localX, packagePointer.localY, point.localX, point.localY);
+  }
+}
+
+function handleTouchEnd(event) {
+  if (movePointer?.id === event.pointerId) {
+    event.preventDefault();
+    resetTouchInput();
+    return;
+  }
+  if (packagePointer?.id !== event.pointerId) return;
+  event.preventDefault();
+  const gesture = packagePointer;
+  packagePointer = null;
+  $("#throwGesture").classList.remove("active");
+  if (gesture.type === "package") {
+    releasePickupAction();
+    return;
+  }
+  const point = canvasPoint(event);
+  const moved = Math.hypot(point.x - gesture.startX, point.y - gesture.startY);
+  if (performance.now() - gesture.started < 450 && moved < 30) handleAction("jump");
+}
+
+function updateThrowGesture(startX, startY, endX, endY) {
+  const guide = $("#throwGesture");
+  const dx = endX - startX;
+  const dy = endY - startY;
+  guide.style.left = `${startX}px`;
+  guide.style.top = `${startY}px`;
+  guide.style.height = `${Math.min(160, Math.hypot(dx, dy))}px`;
+  guide.style.transform = `rotate(${Math.atan2(dy, dx) * 180 / Math.PI - 90}deg)`;
+  guide.classList.add("active");
+}
+
+function updateMobileTutorial() {
+  const shouldShow = document.body.classList.contains("touch-capable")
+    && game?.levelIndex === 0
+    && !localStorage.getItem("poki_ignore.magnetMayhem.mobileTutorialSeen");
+  $("#mobileTutorial").classList.toggle("hidden", !shouldShow);
+}
+
+function dismissMobileTutorial() {
+  localStorage.setItem("poki_ignore.magnetMayhem.mobileTutorialSeen", "1");
+  $("#mobileTutorial").classList.add("hidden");
+}
+
+function hasProgress() {
+  return Object.keys(save.completedLevels).length > 0
+    || Object.keys(save.bestTimes).length > 0
+    || Object.keys(save.stamps).length > 0
+    || save.tutorial.skipped
+    || Object.keys(save.tutorial.completed).length > 0;
+}
+
+function setLoadingProgress(percent, labelKey = "loading.status") {
+  $("#loadingProgress").style.width = `${percent}%`;
+  $(".loading-track").setAttribute("aria-valuenow", String(percent));
+  $("#loadingStatus").textContent = t(labelKey);
+}
+
+async function bootstrap() {
+  applyDocumentText();
+  const touchCapable = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+  document.body.classList.toggle("touch-capable", touchCapable);
+  setLoadingProgress(35);
+  await poki.initialize();
+  setLoadingProgress(78);
+  renderMenus();
+  if (hasProgress()) showScreen("titleScreen");
+  else startLevel("base_game", 0);
+  poki.loadingComplete();
+  setLoadingProgress(100, "loading.ready");
+  requestAnimationFrame(() => {
+    $("#loadingScreen").classList.add("ready");
+    window.setTimeout(() => $("#loadingScreen").classList.add("hidden"), 240);
+  });
+}
+
+poki.onAdStateChange = (active) => {
+  inputEnabled = !active;
+  if (active) {
+    pauseAudio();
+    adPausedGame = game?.mode === "playing";
+    if (adPausedGame) pauseGame();
+  } else if (adPausedGame && !document.hidden) {
+    adPausedGame = false;
+    resumeGame();
+  }
+};
+
+installTestApi();
+bootstrap();
 

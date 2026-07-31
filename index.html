@@ -2,12 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#101825">
-  <title>Magnet Mayhem Delivery</title>
+  <title></title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23101825'/%3E%3Cpath d='M15 12v29a17 17 0 0 0 34 0V12H37v29a5 5 0 0 1-10 0V12z' fill='%23ffd257'/%3E%3Cpath d='M15 12h12v12H15zm22 0h12v12H37z' fill='%23ff566d'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <section id="loadingScreen" class="loading-screen" aria-live="polite">
+    <div class="loading-mark" aria-hidden="true"><span>N</span><i></i><span>S</span></div>
+    <h1 data-i18n="loading.title"></h1>
+    <p id="loadingStatus" data-i18n="loading.status"></p>
+    <div class="loading-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10">
+      <i id="loadingProgress"></i>
+    </div>
+  </section>
+
   <main id="app">
     <section id="titleScreen" class="screen title-screen">
       <div class="title-art" aria-hidden="true">
@@ -15,28 +25,28 @@
         <span class="bot-face">M</span>
         <span class="coil blue"></span>
       </div>
-      <p class="eyebrow">Arcade-puzzle factory runs</p>
-      <h1>Magnet Mayhem Delivery</h1>
-      <p class="lede">Flip the room's polarity, herd a fragile metal package, and reach the delivery chute before the factory gets too spicy.</p>
+      <p class="eyebrow" data-i18n="title.eyebrow"></p>
+      <h1 data-i18n="meta.title"></h1>
+      <p class="lede" data-i18n="title.description"></p>
       <div class="button-row">
-        <button class="btn primary" id="playBtn" type="button">Play</button>
-        <button class="btn" id="levelSelectBtn" type="button">Levels</button>
-        <button class="btn" id="packsBtn" type="button">Expansion Packs</button>
-        <button class="btn icon" id="fullscreenBtn" type="button" aria-label="Toggle fullscreen">[]</button>
+        <button class="btn primary" id="playBtn" type="button" data-i18n="title.play"></button>
+        <button class="btn" id="levelSelectBtn" type="button" data-i18n="title.levels"></button>
+        <button class="btn" id="packsBtn" type="button" data-i18n="title.expansions"></button>
+        <button class="btn icon" id="fullscreenBtn" type="button" data-i18n-aria="title.fullscreen"><span aria-hidden="true">[]</span></button>
       </div>
       <div class="button-row slim">
-        <button class="link" id="settingsOpenBtn" type="button">Settings</button>
-        <button class="link" id="exportBtn" type="button">Export Save</button>
-        <label class="link file-label">Import Save<input id="importInput" type="file" accept="application/json"></label>
+        <button class="link" id="settingsOpenBtn" type="button" data-i18n="title.settings"></button>
+        <button class="link" id="exportBtn" type="button" data-i18n="title.exportSave"></button>
+        <label class="link file-label"><span data-i18n="title.importSave"></span><input id="importInput" type="file" accept="application/json"></label>
       </div>
     </section>
 
     <section id="menuScreen" class="screen menu-screen hidden">
       <div class="menu-head">
-        <button class="btn icon" data-screen="titleScreen" type="button" aria-label="Back">&lt;</button>
+        <button class="btn icon" data-screen="titleScreen" type="button" data-i18n-aria="menu.back">&lt;</button>
         <div>
-          <p class="eyebrow">Base Game</p>
-          <h2>Level Select</h2>
+          <p class="eyebrow" data-i18n="menu.baseGame"></p>
+          <h2 data-i18n="menu.levelSelect"></h2>
         </div>
       </div>
       <div id="levelGrid" class="level-grid"></div>
@@ -44,10 +54,10 @@
 
     <section id="packsScreen" class="screen menu-screen hidden">
       <div class="menu-head">
-        <button class="btn icon" data-screen="titleScreen" type="button" aria-label="Back">&lt;</button>
+        <button class="btn icon" data-screen="titleScreen" type="button" data-i18n-aria="menu.back">&lt;</button>
         <div>
-          <p class="eyebrow">Update-safe content</p>
-          <h2>Expansion Packs</h2>
+          <p class="eyebrow" data-i18n="menu.updateSafe"></p>
+          <h2 data-i18n="menu.expansions"></h2>
         </div>
       </div>
       <div id="packGrid" class="pack-grid"></div>
@@ -55,28 +65,39 @@
 
     <section id="gameScreen" class="game-screen hidden">
       <header class="hud">
-        <div><b id="hudLevel">Level 1</b><span id="hudPack">Base Game</span></div>
-        <div class="meter"><span>Time</span><b id="timer">0.0</b></div>
-        <div class="durability" aria-label="Package durability"><i></i><i></i><i></i></div>
-        <div class="polarity" id="polarityBadge">NORTH</div>
-        <button class="hud-btn hidden" id="skipTutorialBtn" type="button">Skip</button>
-        <button class="hud-btn" id="restartBtn" type="button">R</button>
-        <button class="hud-btn" id="pauseBtn" type="button">II</button>
+        <div><b id="hudLevel"></b><span id="hudPack"></span></div>
+        <div class="meter"><span data-i18n="hud.time"></span><b id="timer">0.0</b></div>
+        <div class="durability" data-i18n-aria="hud.durability"><i></i><i></i><i></i></div>
+        <div class="polarity" id="polarityBadge"></div>
+        <button class="hud-btn hidden" id="skipTutorialBtn" type="button" data-i18n="hud.skip"></button>
+        <button class="hud-btn" id="restartBtn" type="button" data-i18n-aria="hud.restart">R</button>
+        <button class="hud-btn" id="pauseBtn" type="button" data-i18n-aria="hud.pause">II</button>
       </header>
-      <canvas id="gameCanvas" width="960" height="540" aria-label="Magnet Mayhem Delivery game canvas"></canvas>
-      <nav class="touch-controls" aria-label="Mobile controls">
-        <button data-touch="left" type="button">&lt;</button>
-        <button data-touch="right" type="button">&gt;</button>
-        <button data-touch="jump" type="button">^</button>
-        <button data-touch="pickup" type="button">E</button>
-        <button data-touch="flip" type="button">F</button>
-        <button data-touch="restart" type="button">R</button>
-      </nav>
+      <div class="game-stage" id="gameStage">
+        <canvas id="gameCanvas" width="960" height="540" data-i18n-aria="meta.title"></canvas>
+        <div class="touch-layer" id="touchLayer" data-i18n-aria="mobile.controls">
+          <div class="move-zone" id="moveZone" data-i18n-aria="mobile.moveZone">
+            <span class="move-rail"><i id="moveThumb"></i></span>
+          </div>
+          <div class="action-zone" id="actionZone" data-i18n-aria="mobile.actionZone"></div>
+          <button class="polarity-button" id="touchPolarityBtn" type="button" data-i18n-aria="hud.polarity"></button>
+          <div class="throw-gesture" id="throwGesture" aria-hidden="true"></div>
+        </div>
+        <aside class="mobile-tutorial hidden" id="mobileTutorial" aria-live="polite">
+          <b data-i18n="mobile.tutorialTitle"></b>
+          <span data-i18n="mobile.move"></span>
+          <span data-i18n="mobile.jump"></span>
+          <span data-i18n="mobile.package"></span>
+          <span data-i18n="mobile.throw"></span>
+          <span data-i18n="mobile.polarity"></span>
+          <button type="button" id="mobileTutorialDismiss" data-i18n="mobile.dismiss"></button>
+        </aside>
+      </div>
     </section>
 
     <div id="overlay" class="overlay hidden" role="dialog" aria-modal="true">
       <div class="modal">
-        <h2 id="overlayTitle">Paused</h2>
+        <h2 id="overlayTitle"></h2>
         <p id="overlayText"></p>
         <div id="stampResult" class="stamp-result"></div>
         <div id="overlayActions" class="button-row"></div>
@@ -85,14 +106,14 @@
 
     <div id="settingsPanel" class="overlay hidden" role="dialog" aria-modal="true">
       <div class="modal">
-        <h2>Settings</h2>
-        <label class="toggle"><input id="soundToggle" type="checkbox"> Sound effects</label>
-        <label class="toggle"><input id="musicToggle" type="checkbox"> Music pulse</label>
-        <label class="toggle"><input id="shakeToggle" type="checkbox"> Screen shake</label>
+        <h2 data-i18n="settings.title"></h2>
+        <label class="toggle"><input id="soundToggle" type="checkbox"><span data-i18n="settings.sound"></span></label>
+        <label class="toggle"><input id="musicToggle" type="checkbox"><span data-i18n="settings.music"></span></label>
+        <label class="toggle"><input id="shakeToggle" type="checkbox"><span data-i18n="settings.shake"></span></label>
         <div class="button-row">
-          <button class="btn primary" id="settingsSaveBtn" type="button">Done</button>
-          <button class="btn" id="restoreBackupBtn" type="button">Restore Backup Save</button>
-          <button class="btn danger" id="resetBtn" type="button">Reset Progress</button>
+          <button class="btn primary" id="settingsSaveBtn" type="button" data-i18n="settings.done"></button>
+          <button class="btn" id="restoreBackupBtn" type="button" data-i18n="settings.restore"></button>
+          <button class="btn danger" id="resetBtn" type="button" data-i18n="settings.reset"></button>
         </div>
       </div>
     </div>

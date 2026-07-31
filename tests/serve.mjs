@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const portArgument = process.argv.find((argument) => argument.startsWith("--port="));
-const port = Number(portArgument?.split("=")[1] || process.env.PORT || 4187);
+const port = Number(portArgument?.split("=")[1] || process.env.PORT || 4193);
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
