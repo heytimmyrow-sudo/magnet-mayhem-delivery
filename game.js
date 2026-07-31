@@ -35,6 +35,7 @@ let lastFrame = 0;
 let audioCtx = null;
 let musicTimer = null;
 let frameRequest = 0;
+let testPaused = false;
 
 const screens = ["titleScreen", "menuScreen", "packsScreen", "gameScreen"];
 const colors = {
@@ -131,7 +132,7 @@ function loop(now) {
   }
   const dt = Math.min(.033, (now - (lastFrame || now)) / 1000);
   lastFrame = now;
-  if (game.mode === "playing") update(dt);
+  if (game.mode === "playing" && !testPaused) update(dt);
   draw();
   frameRequest = requestAnimationFrame(loop);
 }
@@ -1395,6 +1396,80 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function installGameplayTestApi() {
+  if (typeof location === "undefined"
+    || !["127.0.0.1", "localhost"].includes(location.hostname)
+    || new URLSearchParams(location.search).get("test") !== "1") return;
+  testPaused = true;
+  Object.defineProperty(window, "__MAGNET_MAYHEM_TEST__", {
+    configurable: false,
+    value: {
+      width: W,
+      height: H,
+      constants: {
+        gravity: G,
+        jumpSpeed: JUMP_SPEED,
+        packageSpeedCap: MAGNET_OBJECT_SPEED_CAP,
+        boxSpeedCap: BOX_SPEED_CAP,
+        impulseSpeedCap: MAGNET_IMPULSE_SPEED_CAP
+      },
+      levels: expansionRegistry[0].levels,
+      expansionIds: expansionRegistry.map((pack) => pack.id),
+      get game() { return game; },
+      snapshot() {
+        const snapshotBody = ({ x, y, w, h, vx, vy, startX, startY, grounded, magnetic }) => ({
+          x, y, w, h, vx, vy, startX, startY, grounded, magnetic
+        });
+        return {
+          levelId: game.level.id,
+          levelIndex: game.levelIndex,
+          elapsed: game.elapsed,
+          polarity: game.polarity,
+          failQueued: game.failQueued,
+          player: { ...snapshotBody(game.player), carry: game.player.carry, facing: game.player.facing },
+          package: { ...snapshotBody(game.package), carried: game.package.carried, health: game.package.health },
+          platforms: game.platforms.map(({ x, y, baseX, baseY, prevX, prevY, targetX, targetY, deltaX, deltaY }) => ({
+            x, y, baseX, baseY, prevX, prevY, targetX, targetY, deltaX, deltaY
+          })),
+          doors: game.doors.map(({ x, y, w, h, open, requestedOpen, openAmount }) => ({ x, y, w, h, open, requestedOpen, openAmount })),
+          boxes: game.boxes.map(snapshotBody),
+          hazards: game.hazards.map(({ x, y, baseX, baseY, type }) => ({ x, y, baseX, baseY, type })),
+          plates: game.plates.map(({ x, y, id, pressed, releaseTimer }) => ({ x, y, id, pressed, releaseTimer }))
+        };
+      },
+      start(index) {
+        startLevel("base_game", index);
+        testPaused = true;
+        return game;
+      },
+      restart() {
+        if (!game) return null;
+        startLevel(game.expansion.id, game.levelIndex);
+        testPaused = true;
+        return game;
+      },
+      step(frames = 1, dt = 1 / 60) {
+        for (let frame = 0; frame < frames && game?.mode === "playing"; frame++) update(dt);
+        draw();
+        return game;
+      },
+      draw,
+      update,
+      updatePackage,
+      updatePlates,
+      updateDoorsAndPlatforms,
+      carryPlatformRiders,
+      applyMagnetism,
+      magneticForceVector,
+      polarityImpulse,
+      releasePickupAction,
+      releaseVelocity,
+      solids,
+      rects
+    }
+  });
+}
+
 function handleAction(action) {
   if (action === "jump" && game) game.player.jumpBuffer = .12;
   if (action === "pickup") startPickupAction();
@@ -1530,4 +1605,5 @@ $$("[data-touch]").forEach((button) => {
 
 renderMenus();
 showScreen("titleScreen");
+installGameplayTestApi();
 

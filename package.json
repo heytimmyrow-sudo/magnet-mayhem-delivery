@@ -1,8 +1,14 @@
 {
+  "name": "magnet-mayhem-delivery",
+  "private": true,
   "type": "module",
   "scripts": {
     "build": "node build-static-site.mjs",
-    "test": "node --test tests/gameplay-smoke.test.mjs"
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tests/gameplay-smoke.test.mjs",
+    "test:e2e": "playwright test"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@playwright/test": "^1.54.1"
+  }
 }
