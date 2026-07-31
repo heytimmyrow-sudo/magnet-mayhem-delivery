@@ -4,8 +4,8 @@
     "totalBytes": 8388608
   },
   "totals": {
-    "bytes": 97351,
-    "gzipBytes": 27566
+    "bytes": 113966,
+    "gzipBytes": 31606
   },
   "withinBudget": true,
   "files": [
@@ -21,8 +21,8 @@
     },
     {
       "path": "game.js",
-      "bytes": 54080,
-      "gzipBytes": 14395
+      "bytes": 70424,
+      "gzipBytes": 18302
     },
     {
       "path": "poki-wrapper.js",
@@ -36,13 +36,13 @@
     },
     {
       "path": "localization/en.js",
-      "bytes": 8284,
-      "gzipBytes": 3121
+      "bytes": 8508,
+      "gzipBytes": 3199
     },
     {
       "path": "levels/base-game.js",
-      "bytes": 6966,
-      "gzipBytes": 1702
+      "bytes": 7013,
+      "gzipBytes": 1757
     },
     {
       "path": "expansions/expansion-registry.js",

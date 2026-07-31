@@ -1,38 +1,41 @@
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
-const portArg = process.argv.find((value) => value.startsWith("--port="));
-const port = Number(portArg?.split("=")[1] || 4193);
-const types = {
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const portArgument = process.argv.find((argument) => argument.startsWith("--port="));
+const port = Number(portArgument?.split("=")[1] || process.env.PORT || 4193);
+const contentTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8"
+  ".mjs": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8"
 };
 
-createServer(async (request, response) => {
-  const pathname = decodeURIComponent(new URL(request.url, `http://${request.headers.host}`).pathname);
-  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const filePath = normalize(join(root, relative));
-  if (!filePath.startsWith(root)) {
-    response.writeHead(403).end("Forbidden");
-    return;
-  }
+const server = createServer(async (request, response) => {
   try {
-    const info = await stat(filePath);
-    if (!info.isFile()) throw new Error("Not a file");
+    const pathname = decodeURIComponent(new URL(request.url, `http://${request.headers.host}`).pathname);
+    const requested = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const filePath = resolve(root, requested);
+    if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) throw new Error("Invalid path");
+    if (!(await stat(filePath)).isFile()) throw new Error("Not a file");
     response.writeHead(200, {
-      "content-type": types[extname(filePath)] || "application/octet-stream",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      "content-type": contentTypes[extname(filePath)] || "application/octet-stream"
     });
-    createReadStream(filePath).pipe(response);
+    response.end(await readFile(filePath));
   } catch {
-    response.writeHead(404).end("Not found");
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Not found");
   }
-}).listen(port, "127.0.0.1", () => {
+});
+
+server.listen(port, "127.0.0.1", () => {
   console.log(`Magnet Mayhem test server listening on http://127.0.0.1:${port}`);
 });
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => server.close(() => process.exit(0)));
+}

@@ -84,11 +84,14 @@ export const STRINGS = {
   game: {
     defaultMessage: "Deliver the robot and package to the green chute.",
     pickupTip: "Press E to pick up",
-    carryTip: "Press E to toss or drop",
+    carryTip: "Tap E to drop, hold E to throw",
     polarityTip: "Press F to flip polarity",
     deliveryTip: "Reach the green SHIP chute",
     packageLineFailure: "The package line ate the delivery.",
     robotScrambled: "The robot got scrambled.",
+    robotFell: "The robot fell out of the delivery lane.",
+    packageFell: "The package fell out of the delivery lane.",
+    releaseBlocked: "Move away from the wall before releasing the package.",
     packageDestroyed: "Package destroyed by {reason}.",
     damageReasons: {
       hardImpact: "a hard impact",
@@ -131,7 +134,7 @@ export const STRINGS = {
     training_pickup: { name: "Pick Up And Ship", hint: "Walk to the package. Press E to carry it. Bring it into the green SHIP chute." },
     first_flip: { name: "First Flip", hint: "Drop the package near the red magnet. Press F: red pushes it away, blue pulls it back." },
     magnet_lift: { name: "Magnet Lift", hint: "Blue polarity pulls metal toward red magnets. Use F to lift the package onto the ledge." },
-    soft_spikes: { name: "Spike Detour", hint: "Spikes hurt the package. Flip polarity to slide the loose package over safe metal platforms." },
+    soft_spikes: { name: "Spike Detour", hint: "Pull the package onto the moving bridge, then flip to push it safely over the spikes to SHIP." },
     polarity_door: { name: "Door Switch", hint: "Doors show the color that opens them. Flip to blue to open this door." },
     moving_bridge: { name: "Moving Bridge", hint: "Some platforms are magnetic. Flip to move the bridge into place, then cross." },
     plate_gate: { name: "Plate Gate", hint: "Drop the package or a box on green plates to open linked gates." },
@@ -139,7 +142,7 @@ export const STRINGS = {
     throw_lane: { name: "Throw Lane", hint: "Tap E while carrying to toss the package. Magnets help catch and redirect it." },
     crusher_intro: { name: "Crusher Intro", hint: "Crushers damage the package. Wait for the downbeat, then move both robot and package through." },
     electric_choice: { name: "Electric Choice", hint: "Electric barriers turn on by polarity. The dim barrier is safe; the bright one hurts." },
-    box_button: { name: "Box Button", hint: "Metal boxes react to magnets too. Flip polarity to shove the box onto the plate." },
+    box_button: { name: "Box Button", hint: "Flip to PULL the box right. Tall stops keep it in the lane; settle it on the linked green button." },
     combo_bridge: { name: "Combo Bridge", hint: "Combine the tricks: move the bridge, protect the package, and choose safe polarity." },
     combo_gate: { name: "Combo Gate", hint: "Use the box for the plate, then flip polarity to ferry the package through the gate." },
     final_sort: { name: "Final Sort", hint: "Final delivery: every flip should move something. Watch the arrows and take it one room at a time." }
